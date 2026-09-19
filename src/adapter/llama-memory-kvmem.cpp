@@ -23,7 +23,7 @@
 #include "ggml-backend-impl.h"
 #include "ggml-cuda.h"
 
-#include <cuda_runtime.h>
+#include "llama-kvmem-gpu.h"
 #include "llama-kvmem-diag.h"
 
 #include <algorithm>
