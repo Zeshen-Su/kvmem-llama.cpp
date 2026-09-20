@@ -288,6 +288,12 @@ def main():
     ap.add_argument('--startup-timeout', type=float, default=180)
     args = ap.parse_args()
     env = os.environ.copy()
+    # glibc arena mitigation: per-decode-step ~10 MiB ubatch allocations interact
+    # with glibc's per-thread arenas (up to 8 per core) and pin the heap top, so
+    # RSS grows without bound on many-core Linux hosts (13 GiB -> 47.8+ GiB over
+    # a 33-round 256K canary). Capping arenas at 2 keeps released memory
+    # returnable. User-overridable; glibc-specific (harmless no-op elsewhere).
+    env.setdefault('MALLOC_ARENA_MAX', '2')
     binary = (Path(env.get('BUILD_DIR', str(ROOT / 'build'))) / 'bin/llama-kvmem-server').resolve()
     port = int(env.get('PORT', '18200'))
     if not 1 <= port <= 65535:
