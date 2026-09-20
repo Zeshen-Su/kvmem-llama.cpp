@@ -34,8 +34,7 @@ static bool use_gdn_replay(const llama_model & model, const llama_cparams & cp) 
     if (!supported && mode == 2) {
         throw std::runtime_error("GDN replay requires single-sequence Qwen 27B with MTP 1-5 and all recurrent layers on one supported device");
     }
-    // Keep automatic selection on snapshots until the replay regression suite passes.
-    return supported && mode == 2;
+    return supported;
 }
 
 llama_memory_kvmem_hybrid::llama_memory_kvmem_hybrid(
