@@ -67,6 +67,48 @@ inside WSL must enumerate an accelerated device. This workspace currently
 validates software Vulkan locally; native Linux AMD results do not establish
 AMD acceleration inside WSL.
 
+## Build (Windows)
+
+Tested configuration: Windows 11 + MinGW-w64 GCC 16 + CMake + Vulkan SDK
+1.4.x, on an AMD Radeon RX 9060 XT (AMD proprietary `amdvlk` driver). Nothing
+in the build is machine-specific: the steps below use only environment
+variables that the Vulkan SDK installer sets.
+
+```bat
+git clone --recurse-submodules https://github.com/kvmem/kvmem-llama.cpp.git
+cd kvmem-llama.cpp
+bash scripts/apply-patches.sh        :: any bash works (Git for Windows, WSL)
+scripts/build-vulkan-windows.cmd     :: binaries under build-vulkan-win/bin/
+```
+
+Requirements: Vulkan SDK (sets `VULKAN_SDK`), CMake in PATH, and either
+MinGW-w64 (`gcc` in PATH -> "MinGW Makefiles" is selected automatically) or
+MSVC. The repository's top-level `CMakeLists.txt` defines
+`_WIN32_WINNT=0x0A00` on Windows; without it the bundled cpp-httplib fails
+to compile with MinGW (`CreateFile2` not declared). `MALLOC_ARENA_MAX` is a
+glibc knob and does not apply to the Windows heap.
+
+Machines with several GPUs (e.g. a laptop with NVIDIA + an eGPU enclosure)
+expose several Vulkan devices, and their order is machine-specific. Always
+pick the device explicitly instead of relying on the default:
+
+```bat
+vulkaninfo --summary
+set GGML_VULKAN_DEVICE=1   &:: the index of YOUR Vulkan GPU on YOUR machine
+build-vulkan-win/bin/llama-kvmem-server.exe --list-devices
+```
+
+Notes and limitations specific to Windows:
+
+- `scripts/multimodal_canary_vulkan.py` reads VRAM from Linux DRM sysfs; on
+  Windows the sampler reports `null` by design. Windows VRAM telemetry is not
+  implemented yet (unverified).
+- The bash helpers (`build-vulkan.sh`, `start-vulkan.sh`) are Linux-oriented;
+  on Windows use `build-vulkan-windows.cmd` and invoke the binary directly.
+- An eGPU enclosure runs at roughly PCIe x4 bandwidth. KV block staging is
+  bandwidth-sensitive, so decode throughput will be lower than on an
+  internally installed card. This is a hardware property, not a regression.
+
 ## Run
 
 The `start-iq3.sh`/`start-iq4.sh` launchers do GPU selection through

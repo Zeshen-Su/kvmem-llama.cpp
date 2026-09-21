@@ -8,6 +8,11 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if (MSVC)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 endif()
+if (WIN32)
+    # cpp-httplib's mmap path uses CreateFile2, which requires targeting
+    # Windows 8+; MinGW defaults to an older _WIN32_WINNT. MSVC is unaffected.
+    add_compile_definitions(_WIN32_WINNT=0x0A00)
+endif()
 if (WIN32 AND NOT DEFINED BUILD_SHARED_LIBS)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries")
 endif()
