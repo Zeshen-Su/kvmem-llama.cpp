@@ -26,6 +26,7 @@
 // The kernels spell bfloat16 the CUDA way; HIP's equivalent is __hip_bfloat16.
 // ggml-cuda/vendors/hip.h defines nv_bfloat16 the same way.
 typedef __hip_bfloat16 __nv_bfloat16;
+typedef __hip_bfloat16 nv_bfloat16;
 
 // --- runtime API ----------------------------------------------------------
 #define cudaError_t                hipError_t

@@ -29,8 +29,13 @@ class BuildPlanTests(unittest.TestCase):
         self.addCleanup(self.env.stop)
 
     def plan(self, system, wsl=False):
-        with mock.patch.object(build, 'host_platform', return_value=(system, wsl)):
+        with mock.patch.object(build, 'host_platform', return_value=(system, wsl)), \
+                mock.patch.object(build, 'discover_rocm', return_value=self.sdk):
             return build.make_plan(self.args, self.root)
+
+    def test_linux_rejects_windows_sdk_path(self):
+        with self.assertRaisesRegex(ValueError, 'Linux ROCm SDK'):
+            build.discover_rocm('D:/example/ROCm', {}, 'linux')
 
     def test_linux_and_wsl_share_command(self):
         linux, _ = self.plan('linux')
@@ -62,7 +67,7 @@ class BuildPlanTests(unittest.TestCase):
     def test_windows_sdk_rejected_on_linux(self):
         self.args.rocm = r'Z:\tools\rocm'
         with self.assertRaisesRegex(ValueError, 'Linux ROCm SDK'):
-            self.plan('linux', True)
+            build.discover_rocm(self.args.rocm, {}, 'linux')
 
     def test_source_directory_rejected(self):
         self.args.build_dir = str(self.root)

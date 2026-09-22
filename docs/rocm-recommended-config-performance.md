@@ -1,5 +1,8 @@
 # ROCm README 对齐配置与 5060 Ti 基线对比
 
+以下保留 FangJiangyi 在 PR #33 提供的历史实测记录；版本、设备和配置以正文为准。
+当前整合版本的构建和启动方法见 [rocm.md](rocm.md)。
+
 本次复测严格采用 [推荐配置与测试结果](recommended-config-performance.md)
 中的 budget / reserve：IQ3 为 `36864 + 16384`，IQ4 为
 `32768 + 12288`，并在 Task 1 和 Task 2 中保持不变。测试日期为

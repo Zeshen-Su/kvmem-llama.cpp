@@ -4,6 +4,8 @@
 
 **QQ community / QQ 交流群：1040777853**
 
+**AMD ROCm / HIP:** [Windows and Linux build, IQ3 launchers and usage / 使用说明](docs/rocm.md).
+
 ## Near-lossless Qwen3.8-27B at a full 256K workspace on 16 GiB VRAM
 
 llama.cpp inference with tiered KV memory for long-running agents.
@@ -105,23 +107,22 @@ The submodule is ggml-org/llama.cpp at pin `b81c99b`. `scripts/apply-patches.sh`
 
 The build script defaults to `CMAKE_CUDA_ARCHITECTURES=120a-real` for the tested RTX 5060 Ti. For another GPU, set `CMAKE_CUDA_ARCHITECTURES` to its appropriate target when running the script; other GPU targets have not been tested here.
 
-### Experimental ROCm build
+### ROCm build
 
 The HIP path reuses llama.cpp's ROCm backend and compiles KVMem's stage-in,
-stage-out, layout-copy, mean-K and ReplaySSM fold kernels with HIP. It was
-compiled and GPU-tested with ROCm 7.14 on an RX 7900 XTX (`gfx1100`). It is
-not directly performance-comparable with the RTX 5060 Ti CUDA tables above.
+stage-out, layout-copy, mean-K and ReplaySSM fold kernels with HIP.
+See [Windows/Linux usage and packaging](docs/rocm.md) for the integrated build.
+The RX 7900 XTX results below are historical measurements contributed by
+FangJiangyi in PR #33, not measurements of every supported AMD GPU.
 
 ```bash
-scripts/apply-patches.sh
-AMDGPU_TARGETS=gfx1100 scripts/build-rocm.sh
+export ROCM_PATH=/opt/rocm
+python3 scripts/build-rocm.py --linux
 ```
 
-`build-rocm/bin/llama-kvmem-cli` and `llama-kvmem-server` carry a build-tree
-ROCm RPATH, so they can run without manually exporting `LD_LIBRARY_PATH`.
-Use the actual target for another AMD GPU, for example
-`AMDGPU_TARGETS=gfx1030`. Verify the bounded-KV invariant and the sampled
-VRAM/RSS peaks with a local model:
+Native Linux output is under `build-hip-linux/bin`; Windows uses `build-hip-win/bin`.
+The build detects the GPU architecture and accepts `--gpu-targets` as an override.
+Verify the bounded-KV invariant and sampled VRAM/RSS peaks with a local model:
 
 ```bash
 python3 scripts/rocm_memory_canary.py -m /path/to/model.gguf \

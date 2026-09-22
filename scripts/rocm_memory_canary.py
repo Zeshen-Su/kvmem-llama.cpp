@@ -27,7 +27,7 @@ PROMPT_RE = re.compile(r"n_prompt=(\d+)")
 
 
 def find_cli() -> Path:
-    for path in (ROOT / "build-rocm/bin/llama-kvmem-cli", ROOT / "build/bin/llama-kvmem-cli"):
+    for path in (ROOT / "build-hip-linux/bin/llama-kvmem-cli", ROOT / "build-rocm/bin/llama-kvmem-cli", ROOT / "build/bin/llama-kvmem-cli"):
         if path.is_file():
             return path
     raise SystemExit("llama-kvmem-cli not found; run scripts/build-rocm.sh")
