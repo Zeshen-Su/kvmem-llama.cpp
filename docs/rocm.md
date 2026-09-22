@@ -14,6 +14,8 @@ Windows starts with `--load-mode none`; Linux starts with `--load-mode auto`.
 
 Windows 需要支持相应显卡的 AMD 驱动及 Microsoft Visual C++ x64 运行库。
 Linux 需要与本机 GPU、发行版匹配的 ROCm 7.2.x 运行环境。WSL 使用 Linux ROCm，不能使用 Windows DLL。
+当前 Linux 运行包基于 Ubuntu 24.04 构建，依赖系统 OpenSSL 3、glibc、libstdc++ 及 ROCm 的系统依赖；
+其他发行版应确认二进制兼容性，或按下文从源码编译。
 查看包内 `BUILD-INFO.json` 的编译目标与 `VALIDATION.md` 的实际验证范围。
 建议 16 GiB 显存、32 GiB 或更多系统 RAM；关闭占用显存的大型应用。
 
