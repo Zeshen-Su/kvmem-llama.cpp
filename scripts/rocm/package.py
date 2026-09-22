@@ -112,9 +112,10 @@ def main():
         shutil.copytree(args.runtime_licenses, output / 'licenses/ROCm')
     else:
         # Keep the OS/ROCm driver stack external; bundle only this build's libraries.
-        for file in (build / 'bin').glob('*.so*'):
-            copy(file, output / 'lib' / file.name)
-        external = ['ROCm 7.2.x runtime', 'compatible AMD driver', 'glibc and libstdc++', 'OpenMP runtime']
+        for folder in (build / 'bin', build / 'kvmem'):
+            for file in folder.glob('*.so*'):
+                copy(file, output / 'lib' / file.name)
+        external = ['ROCm 7.2.x runtime', 'compatible AMD driver', 'glibc and libstdc++']
     for name in ('start-iq3.ps1', 'start-iq3.sh'):
         if (windows and name.endswith('.ps1')) or (not windows and name.endswith('.sh')):
             copy(ROOT / 'scripts/rocm' / name, output / 'scripts/rocm' / name)

@@ -45,7 +45,7 @@ Use separate build directories for each operating system and SDK version.
 Common requirements: Python 3, Git, CMake >= 3.24, Ninja, a compatible ROCm/HIP SDK.
 Windows additionally needs Visual Studio 2022 C++ Build Tools and a Windows SDK.
 This build was developed with MSVC 14.44; later toolchains need separate validation.
-Linux needs the normal C/C++ development headers and OpenMP support.
+Linux needs the normal C/C++ development headers.
 
 ```powershell
 # Set this to the installed Windows HIP SDK root.
@@ -75,7 +75,7 @@ python scripts/build-rocm.py --gpu-targets gfx1100,gfx1200,gfx1201 --jobs 8
 Only select targets supported by your installed SDK and GPU. A compiled target does not imply
 an actual-device test. Build locally for architectures absent from a binary package.
 `GGML_NATIVE=OFF` avoids host-specific CPU tuning; packaged x86_64 binaries require AVX2, FMA, F16C and BMI2.
-The Windows HIP build uses ggml's thread pool (`GGML_OPENMP=OFF`), so the runtime package
+The HIP builds use ggml's thread pool (`GGML_OPENMP=OFF`), so the Windows runtime package
 does not depend on Visual Studio's non-redistributable `libomp140` DLL.
 
 ### UI and first start

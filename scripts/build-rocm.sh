@@ -53,9 +53,10 @@ cmake "${configure_args[@]}" -S "${root}" -B "${build_dir}" -G Ninja \
     -DROCM_PATH="${rocm}" \
     -DGGML_HIP_UMA=OFF \
     -DGGML_NATIVE=OFF \
+    -DGGML_OPENMP=OFF \
     -DKVMEM_ENABLE_NVME=OFF \
     -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
-    '-DCMAKE_INSTALL_RPATH=$ORIGIN;$ORIGIN/../lib' \
+    '-DCMAKE_INSTALL_RPATH=$ORIGIN;$ORIGIN/../lib;$ORIGIN/../kvmem' \
     -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF \
     -DGGML_VULKAN=OFF \
     -DKVMEM_BUILD_LLAMA=ON \
