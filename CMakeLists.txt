@@ -106,6 +106,21 @@ if (KVMEM_BUILD_LLAMA)
                 list(FILTER KVMEM_DETECTED_GPU_TARGETS EXCLUDE REGEX "^$")
                 list(REMOVE_DUPLICATES KVMEM_DETECTED_GPU_TARGETS)
             endif()
+            # WSL can expose HIP devices while LLVM's PCI-based probe is empty.
+            if (NOT KVMEM_DETECTED_GPU_TARGETS AND NOT WIN32)
+                find_program(KVMEM_ROCM_ENUM NAMES rocm_agent_enumerator
+                    HINTS "${ROCM_PATH}/bin" NO_DEFAULT_PATH)
+                if (KVMEM_ROCM_ENUM)
+                    execute_process(COMMAND "${KVMEM_ROCM_ENUM}"
+                        RESULT_VARIABLE KVMEM_AMDGPU_ARCH_RESULT
+                        OUTPUT_VARIABLE KVMEM_ENUM_OUTPUT
+                        ERROR_VARIABLE KVMEM_AMDGPU_ARCH_ERROR
+                        OUTPUT_STRIP_TRAILING_WHITESPACE)
+                    string(REGEX MATCHALL "gfx[0-9a-f]+" KVMEM_DETECTED_GPU_TARGETS "${KVMEM_ENUM_OUTPUT}")
+                    list(FILTER KVMEM_DETECTED_GPU_TARGETS EXCLUDE REGEX "^gfx000$")
+                    list(REMOVE_DUPLICATES KVMEM_DETECTED_GPU_TARGETS)
+                endif()
+            endif()
             if (KVMEM_AMDGPU_ARCH_RESULT EQUAL 0 AND KVMEM_DETECTED_GPU_TARGETS)
                 set(GPU_TARGETS "${KVMEM_DETECTED_GPU_TARGETS}" CACHE STRING
                     "AMD GPU targets detected by amdgpu-arch")

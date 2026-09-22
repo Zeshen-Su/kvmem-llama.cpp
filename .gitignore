@@ -14,3 +14,5 @@ __pycache__/
 /build-ui/
 
 /build-win*/
+/build-hip*/
+/dist/
