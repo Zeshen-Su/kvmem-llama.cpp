@@ -26,7 +26,7 @@ def main():
     output.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(output, 'x:gz') as target:
         for repository, ref, prefix in [(ROOT, commit, ''), (ROOT / 'llama.cpp', pin, 'llama.cpp/')]:
-            data = subprocess.check_output(['git', 'archive', ref], cwd=repository)
+            data = subprocess.check_output(['git', '-c', 'core.autocrlf=false', 'archive', ref], cwd=repository)
             with tarfile.open(fileobj=io.BytesIO(data)) as source:
                 for member in source:
                     if not member.isfile():
