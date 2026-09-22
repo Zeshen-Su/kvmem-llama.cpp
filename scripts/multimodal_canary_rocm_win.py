@@ -146,7 +146,7 @@ def fixture(size=896, changed=False):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--binary', type=Path, default=ROOT / 'build/bin/llama-kvmem-server')
+    ap.add_argument('--binary', type=Path, default=ROOT / 'build-hip-win/bin/llama-kvmem-server.exe')
     ap.add_argument('--model', type=Path, default=ROOT / 'models/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF/Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf')
     ap.add_argument('--mmproj', type=Path, default=ROOT / 'models/unsloth/Qwen3.8-27B-GGUF/mmproj-Q8_0.gguf')
     ap.add_argument('--no-projector', action='store_true')

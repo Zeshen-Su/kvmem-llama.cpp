@@ -71,12 +71,14 @@ def run_case(cli: Path, model: Path, words: int, gpu: int, kvmem: bool,
         env = os.environ.copy()
         env["KVMEM_TRACE"] = "1"
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        peaks = {"vram": vram_mib(gpu) or 0.0, "rss": 0.0}
+        peaks = {"vram": vram_mib(gpu), "rss": 0.0}
         done = threading.Event()
 
         def sample() -> None:
             while not done.is_set():
-                peaks["vram"] = max(peaks["vram"], vram_mib(gpu) or 0.0)
+                measured = vram_mib(gpu)
+                if measured is not None:
+                    peaks["vram"] = max(peaks["vram"] or 0.0, measured)
                 peaks["rss"] = max(peaks["rss"], rss_mib(process.pid) or 0.0)
                 time.sleep(0.15)
 
@@ -101,7 +103,8 @@ def run_case(cli: Path, model: Path, words: int, gpu: int, kvmem: bool,
 
 
 def summary(name: str, row: dict) -> None:
-    print(f"{name}: rc={row['rc']} prompt={row.get('n_prompt')} vram_peak={row['vram_mib']:.1f} MiB "
+    vram = f"{row['vram_mib']:.1f}" if row['vram_mib'] is not None else 'unavailable'
+    print(f"{name}: rc={row['rc']} prompt={row.get('n_prompt')} vram_peak={vram} MiB "
           f"rss_peak={row['rss_mib']:.1f} MiB kv_bytes={row.get('kv_bytes')} cells={row.get('kv_cells')} "
           f"mtp_bytes={row.get('mtp_bytes')} mtp_cells={row.get('mtp_cells')}")
 
@@ -135,6 +138,8 @@ def main() -> int:
     summary("kvmem-long", long)
 
     failures = []
+    if native['rc'] != 0:
+        failures.append(f"native-long exited {native['rc']}")
     for name, row, requested in (("kvmem-short", short, args.short_words),
                                  ("kvmem-long", long, args.long_words)):
         if row["rc"] != 0:
@@ -150,7 +155,9 @@ def main() -> int:
             failures.append("KVMem MTP pool log missing")
         elif (short["mtp_bytes"], short["mtp_cells"]) != (long["mtp_bytes"], long["mtp_cells"]):
             failures.append("KVMem MTP GPU KV bytes/cells grew with prompt length")
-    if long["vram_mib"] > native["vram_mib"]:
+    if long['vram_mib'] is None or native['vram_mib'] is None:
+        failures.append('VRAM sampling unavailable; check amd-smi access before comparing peaks')
+    elif long["vram_mib"] > native["vram_mib"]:
         failures.append("KVMem long-run VRAM peak exceeded native KV peak")
     if failures:
         print("FAIL: " + "; ".join(failures))
