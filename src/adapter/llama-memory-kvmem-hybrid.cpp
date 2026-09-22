@@ -31,7 +31,7 @@ static bool use_gdn_replay(const llama_model & model, const llama_cparams & cp) 
             std::strcmp(ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev)), GGML_CUDA_NAME) == 0 && (!device || device == dev);
         device = dev;
     }
-    if (!supported && mode == 2) throw std::runtime_error("GDN replay requires single-sequence CUDA Qwen 27B with MTP 1-5 and all recurrent layers on one GPU");
+    if (!supported && mode == 2) throw std::runtime_error("GDN replay requires single-sequence GPU Qwen 27B with MTP 1-5 and all recurrent layers on one GPU");
     // Keep automatic selection on snapshots until the replay regression suite passes.
     return supported && mode == 2;
 }

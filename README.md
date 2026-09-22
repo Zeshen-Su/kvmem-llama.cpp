@@ -60,7 +60,7 @@ Do **not** commit a dirty `llama.cpp` working tree. The submodule pointer is the
 - RTX 5060 Ti with 16 GiB VRAM; Intel Core Ultra 7 255H and 32 GiB RAM (19.53 GiB visible to WSL2).
 - CMake 4.4.3 and CUDA 13.2.86.
 
-The project builds on llama.cpp's CUDA backend, with the platform above used for our measurements. Reports of successful runs, benchmarks and issues on other NVIDIA GPUs and systems are welcome. AMD/ROCm and Metal backends would need integration work.
+The project builds on llama.cpp's CUDA backend, with the platform above used for our measurements. Reports of successful runs, benchmarks and issues on other NVIDIA GPUs and systems are welcome. An experimental AMD/ROCm HIP path is also available; Metal still needs integration work.
 
 ## Prebuilt downloads
 
@@ -104,6 +104,55 @@ The submodule is ggml-org/llama.cpp at pin `b81c99b`. `scripts/apply-patches.sh`
 `scripts/build-cuda.sh` sets `GGML_CUDA_FA_ALL_QUANTS=ON` (needed for `--kv-dtype q5_0` on hybrid models). Binaries: `build/bin/llama-kvmem-server`.
 
 The build script defaults to `CMAKE_CUDA_ARCHITECTURES=120a-real` for the tested RTX 5060 Ti. For another GPU, set `CMAKE_CUDA_ARCHITECTURES` to its appropriate target when running the script; other GPU targets have not been tested here.
+
+### Experimental ROCm build
+
+The HIP path reuses llama.cpp's ROCm backend and compiles KVMem's stage-in,
+stage-out, layout-copy, mean-K and ReplaySSM fold kernels with HIP. It was
+compiled and GPU-tested with ROCm 7.14 on an RX 7900 XTX (`gfx1100`). It is
+not directly performance-comparable with the RTX 5060 Ti CUDA tables above.
+
+```bash
+scripts/apply-patches.sh
+AMDGPU_TARGETS=gfx1100 scripts/build-rocm.sh
+```
+
+`build-rocm/bin/llama-kvmem-cli` and `llama-kvmem-server` carry a build-tree
+ROCm RPATH, so they can run without manually exporting `LD_LIBRARY_PATH`.
+Use the actual target for another AMD GPU, for example
+`AMDGPU_TARGETS=gfx1030`. Verify the bounded-KV invariant and the sampled
+VRAM/RSS peaks with a local model:
+
+```bash
+python3 scripts/rocm_memory_canary.py -m /path/to/model.gguf \
+  --short-words 1024 --long-words 8192 --budget 256 --reserve 128
+```
+
+For models with an embedded MTP head, add `--mtp-draft-n-max 2`; the canary
+then verifies that both the target and MTP slot pools remain fixed. On the
+tested RX 7900 XTX, Qwen3.8-27B GSQ-RCO IQ3_S MTP at 1,024 and 8,192 prompt
+words used a fixed target pool of 44,564,480 bytes / 1,280 cells and a fixed
+MTP pool of 2,785,280 bytes / 1,280 cells. Sampled whole-device peak VRAM was
+12,430 MiB for KVMem at 8,192 words versus 12,727 MiB for native KV; peak RSS
+was about 11,992 MiB. This validates the bounded-memory invariant on ROCm,
+but is not a performance or absolute-memory comparison with the CUDA results
+on the different RTX 5060 Ti hardware.
+
+The full README-aligned ROCm IQ3/IQ4 Task 1 and 256K Task 2 measurements,
+including a metric-by-metric comparison with the RTX 5060 Ti baseline, are in
+[docs/rocm-recommended-config-performance.md](docs/rocm-recommended-config-performance.md).
+Both tasks use IQ3 `36864 + 16384` and IQ4 `32768 + 12288` unchanged. On the
+RX 7900 XTX, these runs reached 16011--16313 MiB peak VRAM and
+4372--13068 MiB runtime RSS. Task 1 IQ3/IQ4 passed, while Task 2 IQ4 passed
+the benchmark's 512-token length check. Task 2 IQ3 completed all tool rounds
+but stopped naturally at 232 final tokens, so it is reported as a diagnostic
+result rather than a 512-token equivalent. Free-VRAM figures are not directly
+comparable because this GPU has 24 GiB rather than 16 GiB.
+
+On the RX 7900 XTX test with Qwen3-0.6B Q8_0, native 8K KV peaked at
+1587.0 MiB whole-GPU VRAM; KVMem peaked at 1142.0 MiB and kept its GPU KV at
+23,396,352 bytes / 384 cells for both 1K and 8K prompts. Its RSS increased
+from 944.3 MiB to 1203.2 MiB as expected when more history moved to host RAM.
 
 ## Browser chat
 

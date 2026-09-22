@@ -33,6 +33,10 @@ enable_testing()
 add_subdirectory(kvmem)
 
 option(KVMEM_BUILD_LLAMA "Build llama.cpp with the KVMem adapter" ON)
+option(KVMEM_ROCM "Build KVMem with the HIP/ROCm backend" OFF)
+if (KVMEM_ROCM)
+    set(GGML_HIP ON CACHE BOOL "ggml: use HIP" FORCE)
+endif()
 
 # GPU backend selection.
 #   (default)      -> CUDA, the upstream KVMem target.
@@ -49,32 +53,17 @@ else()
 endif()
 
 if (KVMEM_BUILD_LLAMA)
+    if (GGML_VULKAN)
+        message(FATAL_ERROR "This HIP integration does not include the Vulkan adapter. Use the Vulkan worktree; do not combine its backend with CUDA/HIP staging.")
+    endif()
     if (KVMEM_GPU_BACKEND STREQUAL "CUDA")
-        if (NOT CMAKE_CUDA_COMPILER AND EXISTS "/home/leye/kvmem_qw3/.cu13-env/bin/nvcc")
-            set(CMAKE_CUDA_COMPILER "/home/leye/kvmem_qw3/.cu13-env/bin/nvcc" CACHE FILEPATH "nvcc")
-        endif()
-        if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-            set(CMAKE_CUDA_ARCHITECTURES "120a-real" CACHE STRING "Blackwell sm_120")
-        endif()
-
+        # Let CMake discover nvcc (or honor CUDACXX/CMAKE_CUDA_COMPILER) and
+        # let ggml select the local GPU architecture. This keeps the CUDA path
+        # portable without changing its backend semantics.
         option(GGML_CUDA "ggml: use CUDA" ON)
     else()
         # ROCm: the CUDA backend must stay off and no CUDA arch may be forced.
         set(GGML_CUDA OFF CACHE BOOL "ggml: use CUDA" FORCE)
-        if (NOT GPU_TARGETS AND AMDGPU_TARGETS)
-            set(GPU_TARGETS "${AMDGPU_TARGETS}" CACHE STRING "AMD GPU targets for the HIP build")
-        endif()
-        if (NOT GPU_TARGETS AND NOT CMAKE_HIP_ARCHITECTURES)
-            # Same default the rest of this machine's builds use (RX 6900 XT).
-            set(GPU_TARGETS "gfx1030" CACHE STRING "AMD GPU targets for the HIP build")
-        endif()
-        if (GPU_TARGETS AND NOT CMAKE_HIP_ARCHITECTURES)
-            set(CMAKE_HIP_ARCHITECTURES "${GPU_TARGETS}")
-        endif()
-
-        # ggml-hip calls find_package(hip) in its own directory scope, so
-        # hip::host / hip::device are not visible up here. Import them again for
-        # the root scope (imported targets are not global by default).
         if (NOT ROCM_PATH)
             if (DEFINED ENV{ROCM_PATH})
                 set(ROCM_PATH "$ENV{ROCM_PATH}")
@@ -89,6 +78,66 @@ if (KVMEM_BUILD_LLAMA)
         file(TO_CMAKE_PATH "${ROCM_PATH}" ROCM_PATH)
         list(APPEND CMAKE_PREFIX_PATH "${ROCM_PATH}")
         list(APPEND CMAKE_PREFIX_PATH "${ROCM_PATH}/lib/cmake")
+
+        # Respect an explicit target, but otherwise ask the installed ROCm
+        # toolchain which AMD devices are present. A repository default such as
+        # gfx1030/gfx1100 produces binaries that silently fail or run on the
+        # wrong ISA when the checkout is moved to another machine.
+        if (NOT GPU_TARGETS AND DEFINED ENV{GPU_TARGETS})
+            set(GPU_TARGETS "$ENV{GPU_TARGETS}" CACHE STRING "AMD GPU targets for the HIP build")
+        elseif (NOT GPU_TARGETS AND AMDGPU_TARGETS)
+            set(GPU_TARGETS "${AMDGPU_TARGETS}" CACHE STRING "AMD GPU targets for the HIP build")
+        elseif (NOT GPU_TARGETS AND DEFINED ENV{AMDGPU_TARGETS})
+            set(GPU_TARGETS "$ENV{AMDGPU_TARGETS}" CACHE STRING "AMD GPU targets for the HIP build")
+        endif()
+        if (NOT GPU_TARGETS AND NOT CMAKE_HIP_ARCHITECTURES)
+            find_program(KVMEM_AMDGPU_ARCH
+                NAMES amdgpu-arch amdgpu-arch.exe
+                HINTS "${ROCM_PATH}/bin" "${ROCM_PATH}/llvm/bin" "${ROCM_PATH}/lib/llvm/bin")
+            if (KVMEM_AMDGPU_ARCH)
+                execute_process(
+                    COMMAND "${KVMEM_AMDGPU_ARCH}"
+                    RESULT_VARIABLE KVMEM_AMDGPU_ARCH_RESULT
+                    OUTPUT_VARIABLE KVMEM_DETECTED_GPU_TARGETS
+                    ERROR_VARIABLE KVMEM_AMDGPU_ARCH_ERROR
+                    OUTPUT_STRIP_TRAILING_WHITESPACE)
+                string(REPLACE "\r\n" ";" KVMEM_DETECTED_GPU_TARGETS "${KVMEM_DETECTED_GPU_TARGETS}")
+                string(REPLACE "\n" ";" KVMEM_DETECTED_GPU_TARGETS "${KVMEM_DETECTED_GPU_TARGETS}")
+                list(FILTER KVMEM_DETECTED_GPU_TARGETS EXCLUDE REGEX "^$")
+                list(REMOVE_DUPLICATES KVMEM_DETECTED_GPU_TARGETS)
+            endif()
+            if (KVMEM_AMDGPU_ARCH_RESULT EQUAL 0 AND KVMEM_DETECTED_GPU_TARGETS)
+                set(GPU_TARGETS "${KVMEM_DETECTED_GPU_TARGETS}" CACHE STRING
+                    "AMD GPU targets detected by amdgpu-arch")
+            else()
+                message(FATAL_ERROR
+                    "Could not detect an AMD GPU architecture with amdgpu-arch. "
+                    "Connect a supported GPU, or cross-compile explicitly with "
+                    "-DGPU_TARGETS=<gfx...> (or set GPU_TARGETS in the environment). "
+                    "amdgpu-arch reported: ${KVMEM_AMDGPU_ARCH_ERROR}")
+            endif()
+        endif()
+        if (GPU_TARGETS AND NOT CMAKE_HIP_ARCHITECTURES)
+            set(CMAKE_HIP_ARCHITECTURES "${GPU_TARGETS}")
+        endif()
+
+        # PR #33 enables HIP at the root; keep Windows on the CXX HIP path.
+        if (NOT WIN32)
+            cmake_minimum_required(VERSION 3.21)
+            if (NOT CMAKE_HIP_COMPILER)
+                find_program(KVMEM_HIP_CLANG NAMES clang++
+                    HINTS "${ROCM_PATH}/llvm/bin" "${ROCM_PATH}/lib/llvm/bin" "${ROCM_PATH}/bin"
+                    NO_DEFAULT_PATH REQUIRED)
+                set(CMAKE_HIP_COMPILER "${KVMEM_HIP_CLANG}" CACHE FILEPATH "HIP compiler")
+            endif()
+            enable_language(HIP)
+            set(CMAKE_HIP_STANDARD 17)
+            set(CMAKE_HIP_STANDARD_REQUIRED ON)
+        endif()
+
+        # ggml-hip calls find_package(hip) in its own directory scope, so
+        # hip::host / hip::device are not visible up here. Import them again for
+        # the root scope (imported targets are not global by default).
         find_package(hip REQUIRED)
 
         message(STATUS "KVMem: ROCm/HIP backend, GPU_TARGETS=${GPU_TARGETS}, ROCM_PATH=${ROCM_PATH}")
@@ -117,8 +166,12 @@ if (KVMEM_BUILD_LLAMA)
         # into `llama` would turn every libllama translation unit into a HIP
         # device compilation unit.
         add_library(kvmem-stagein-hip OBJECT src/adapter/llama-kvmem-stagein.cu)
-        set_source_files_properties(src/adapter/llama-kvmem-stagein.cu
-            PROPERTIES LANGUAGE CXX)
+        if (WIN32)
+            set_source_files_properties(src/adapter/llama-kvmem-stagein.cu PROPERTIES LANGUAGE CXX)
+        else()
+            set_source_files_properties(src/adapter/llama-kvmem-stagein.cu PROPERTIES LANGUAGE HIP)
+            set_property(TARGET kvmem-stagein-hip PROPERTY HIP_ARCHITECTURES "${CMAKE_HIP_ARCHITECTURES}")
+        endif()
         target_include_directories(kvmem-stagein-hip PRIVATE
             src/adapter
             llama.cpp/include
@@ -139,7 +192,11 @@ if (KVMEM_BUILD_LLAMA)
         # already contributes "-x hip --offload-arch=<CMAKE_HIP_ARCHITECTURES>",
         # which is how ggml-hip gets them too. Adding them a second time makes
         # CMake's option de-duplication emit a malformed "-x --offload-arch=...".
-        target_link_libraries(kvmem-stagein-hip PRIVATE hip::device)
+        if (WIN32)
+            target_link_libraries(kvmem-stagein-hip PRIVATE hip::device)
+        else()
+            target_link_libraries(kvmem-stagein-hip PRIVATE hip::host)
+        endif()
         target_sources(llama PRIVATE $<TARGET_OBJECTS:kvmem-stagein-hip>)
 
         # The adapter's host-side .cpp files call the HIP runtime directly, so
@@ -177,7 +234,6 @@ if (KVMEM_BUILD_LLAMA)
         llama.cpp/vendor/cpp-httplib)
     target_link_libraries(llama-kvmem-server PRIVATE llama llama-common cpp-httplib mtmd)
     target_compile_features(llama-kvmem-server PRIVATE cxx_std_17)
-
     # std::getenv is standard C++ and portable; MSVC marks it deprecated in
     # favour of the Windows-only _dupenv_s, and warns on the POSIX-ish helpers
     # the server uses for the diagnostics toggle (_putenv_s). Make the same
@@ -188,7 +244,6 @@ if (KVMEM_BUILD_LLAMA)
         target_compile_definitions(llama-kvmem-cli    PRIVATE _CRT_SECURE_NO_WARNINGS)
         target_compile_definitions(llama-kvmem-server PRIVATE _CRT_SECURE_NO_WARNINGS)
     endif()
-
     foreach(tool llama-kvmem-cli llama-kvmem-server)
         target_compile_definitions(${tool} PRIVATE KVMEM_ENABLE_NVME=$<BOOL:${KVMEM_ENABLE_NVME}>)
     endforeach()
