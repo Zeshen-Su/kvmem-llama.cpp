@@ -81,6 +81,7 @@ def make_plan(args, root):
         env['CONFIGURE_ONLY'] = '1'
     warnings = []
     if wsl:
+        env.setdefault('HSA_ENABLE_DXG_DETECTION', '1')
         warnings.append('WSL uses the Linux HIP build. Windows ROCm DLLs are not Linux runtime libraries.')
         if not Path('/dev/dxg').exists():
             warnings.append('/dev/dxg is absent: WSL GPU access is not established. Explicit targets can build without a visible GPU; inference still needs working GPU access.')

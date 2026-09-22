@@ -39,11 +39,17 @@ class BuildPlanTests(unittest.TestCase):
 
     def test_linux_and_wsl_share_command(self):
         linux, _ = self.plan('linux')
-        wsl, _ = self.plan('linux', True)
+        wsl, env = self.plan('linux', True)
         self.assertEqual(linux['command'], wsl['command'])
         self.assertEqual(wsl['platform'], 'linux')
         self.assertTrue(wsl['wsl'])
         self.assertTrue(wsl['warnings'])
+        self.assertEqual(env['HSA_ENABLE_DXG_DETECTION'], '1')
+
+    def test_wsl_respects_explicit_dxg_setting(self):
+        os.environ['HSA_ENABLE_DXG_DETECTION'] = '0'
+        _, env = self.plan('linux', True)
+        self.assertEqual(env['HSA_ENABLE_DXG_DETECTION'], '0')
 
     def test_windows_uses_fixed_batch_command(self):
         plan, env = self.plan('windows')

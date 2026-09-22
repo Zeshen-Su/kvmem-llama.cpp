@@ -17,6 +17,9 @@ for file in "$model" "$mmproj" "${build}/bin/llama-kvmem-server" "${ui}/index.ht
     [[ -f "$file" ]] || { echo "Missing file: $file" >&2; exit 2; }
 done
 export LD_LIBRARY_PATH="${build}/lib:${build}/bin:${ROCM_PATH:-/opt/rocm}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+if grep -qi microsoft /proc/sys/kernel/osrelease; then
+    export HSA_ENABLE_DXG_DETECTION="${HSA_ENABLE_DXG_DETECTION:-1}"
+fi
 echo "IQ3 / HIP / ${gpu}: http://127.0.0.1:${port}/ (Ctrl+C to stop)"
 exec "${build}/bin/llama-kvmem-server" \
     -m "$model" --mmproj "$mmproj" --no-mmproj-offload \
