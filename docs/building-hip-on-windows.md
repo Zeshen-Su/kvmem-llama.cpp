@@ -1,5 +1,9 @@
 # 自己编译 KVMem + llama.cpp（Windows / ROCm 10 / gfx1030）
 
+> 以下保留 dockylf 在 PR #10 中的原始环境记录和排障经验，其中的版本、目录、
+> 默认架构与测量数字属于该次记录。当前整合版的编译入口、自动架构检测、
+> `build-hip-win` 目录及 IQ3 启动方式请使用 [ROCm 双平台指南](rocm.md)。
+
 本文记录在 Windows + AMD ROCm/HIP（RDNA2 / gfx1030）上从源码构建 KVMem + llama.cpp
 的完整步骤，含两个会**静默**毁掉性能的陷阱。下文把仓库目录记作 `<repo>`。
 
