@@ -24,7 +24,7 @@
 #include "ggml-backend-impl.h"
 #include "ggml-cuda.h"
 
-#include <cuda_runtime.h>
+#include "llama-kvmem-gpu.h"
 
 #include <algorithm>
 #include <atomic>
