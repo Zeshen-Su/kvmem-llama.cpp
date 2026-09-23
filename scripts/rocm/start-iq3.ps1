@@ -32,7 +32,7 @@ $serverArgs = @(
     '-c', '262144', '-b', '512', '-n', '16384',
     '--kvmem', '--kvmem-budget', '36864', '--kvmem-gen-reserve', '16384',
     '--kvmem-block-tokens', '128', '--kvmem-query-policy', 'user', '--kv-dtype', 'q8_0',
-    '--spec-type', 'draft-mtp', '--spec-draft-n-max', '3', '--spec-kv-dtype', 'f16',
+    '--spec-type', 'draft-mtp', '--spec-draft-n-max', '2', '--spec-kv-dtype', 'f16',
     '--kvmem-mtp-state', 'replay', '--image-max-tokens', '512',
     '--enable-thinking', '--reasoning-budget', '4096'
 )
