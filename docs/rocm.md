@@ -2,8 +2,13 @@
 
 Windows native HIP and Linux/WSL2 HIP use the same KVMem adapter and GDN replay kernels.
 The IQ3 launchers provide a 262144-token workspace, a 36864-token GPU KV budget,
-16384-token generation reserve, q8_0 KV and MTP3 replay. Vision runs on the CPU.
+16384-token generation reserve, q8_0 KV and MTP2 replay. Vision runs on the CPU.
 Windows starts with `--load-mode none`; Linux starts with `--load-mode auto`.
+
+> **Windows 注意 / Windows note**: 请务必使用 `--load-mode none`（启动脚本默认）。
+> 若改用 mmap 加载，模型文件页会滞留内存，256K 全程内存读数会从 ~13 GiB 升至 23 GiB 以上。
+> On Windows keep `--load-mode none` (launcher default). mmap loading retains model
+> pages in RAM and raises the observed footprint from ~13 GiB to 23+ GiB.
 
 ## 运行包 / Runtime package
 
@@ -17,7 +22,7 @@ Linux 需要与本机 GPU、发行版匹配的 ROCm 7.2.x 运行环境。WSL 使
 当前 Linux 运行包基于 Ubuntu 24.04 构建，依赖系统 OpenSSL 3、glibc、libstdc++ 及 ROCm 的系统依赖；
 其他发行版应确认二进制兼容性，或按下文从源码编译。
 查看包内 `BUILD-INFO.json` 的编译目标与 `VALIDATION.md` 的实际验证范围。
-建议 16 GiB 显存、32 GiB 或更多系统 RAM；关闭占用显存的大型应用。
+建议 16 GiB 显存、16 GiB 或更多系统 RAM（256K 全程实测约 13~14 GiB）；关闭占用显存的大型应用。
 
 在解压目录运行，先用 `bin/llama-kvmem-server --list-devices`（Windows 加 `.exe`）查看设备名。
 下面的示例路径需要换成自己的模型路径；`ROCm0` 也应以实际列出的设备为准。
