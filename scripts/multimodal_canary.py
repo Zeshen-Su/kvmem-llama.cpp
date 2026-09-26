@@ -33,6 +33,7 @@ class RocmSampler(threading.Thread):
         self.stop_event = threading.Event()
         self.rows = []
         self.errors = []
+        self.error_count = 0
 
     def run(self):
         start = time.monotonic()
@@ -54,7 +55,9 @@ class RocmSampler(threading.Thread):
                     output.flush()
                 except (KeyError, IndexError, ValueError, json.JSONDecodeError,
                         OSError, subprocess.SubprocessError) as exc:
-                    self.errors.append(repr(exc))
+                    self.error_count += 1
+                    if len(self.errors) < 8:
+                        self.errors.append(repr(exc))
                 self.stop_event.wait(0.15)
 
     def finish(self):
@@ -69,15 +72,15 @@ class RocmSampler(threading.Thread):
                 'min_free_mib': min(row[3] for row in rows),
                 'samples': len(rows),
             }
-        if not self.rows:
-            raise RuntimeError('amd-smi returned no usable VRAM samples')
         return {
-            'peak_vram_mib': max(row[2] for row in self.rows),
+            'peak_vram_mib': max((row[2] for row in self.rows), default=None),
             'phase_metrics': phases,
             'sample_count': len(self.rows),
             'sampling_errors': self.errors,
+            'sampling_error_count': self.error_count,
             'max_sample_gap_ms': max(
-                (b[0] - a[0] for a, b in zip(self.rows, self.rows[1:])), default=0) * 1000,
+                (b[0] - a[0] for a, b in zip(self.rows, self.rows[1:])), default=0) * 1000
+                if len(self.rows) > 1 else None,
         }
 
 
@@ -112,6 +115,7 @@ def main():
     ap.add_argument('--model', type=Path, default=ROOT / 'models/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF/Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf')
     ap.add_argument('--mmproj', type=Path, default=ROOT / 'models/unsloth/Qwen3.8-27B-GGUF/mmproj-Q8_0.gguf')
     ap.add_argument('--no-projector', action='store_true')
+    ap.add_argument('--load-mode', choices=['auto', 'none', 'mmap', 'dio'], default='auto')
     ap.add_argument('--query-replay', choices=['legacy', 'auto'])
     ap.add_argument('--query-policy', choices=['legacy', 'user'])
     ap.add_argument('--mtp-state', choices=['snapshots', 'auto', 'replay'])
@@ -141,6 +145,8 @@ def main():
     ap.add_argument('--long-context-benchmark', action='store_true',
                     help='Replay tool results until prompt plus generation nearly fills --ctx')
     ap.add_argument('--long-chunk-tokens', type=int, default=8192)
+    ap.add_argument('--max-tool-rounds', type=int, default=0,
+                    help='Stop a diagnostic long-context run after this many tool rounds; 0 runs to the final 256K round')
     ap.add_argument('--swap-stop-mib', type=int, default=512,
                     help='Stop the test if server VmSwap reaches this value')
     ap.add_argument('--system-swap-growth-stop-mib', type=int, default=1024)
@@ -166,6 +172,8 @@ def main():
         ap.error('--long-context-benchmark cannot be combined with another query benchmark')
     if args.long_chunk_tokens < 512:
         ap.error('--long-chunk-tokens must be at least 512')
+    if args.max_tool_rounds < 0 or (args.max_tool_rounds and not args.long_context_benchmark):
+        ap.error('--max-tool-rounds requires --long-context-benchmark and must be nonnegative')
     if args.threads < 0:
         ap.error('--threads must be nonnegative')
     if args.swap_stop_mib <= 0 or args.system_swap_growth_stop_mib <= 0:
@@ -208,6 +216,7 @@ def main():
            '--kvmem-block-tokens', '128', '--kv-dtype', args.kv,
            '--spec-type', args.spec, '--spec-draft-n-max', str(args.mtp), '--enable-thinking',
            '--reasoning-budget', str(args.thinking_budget if args.thinking_budget is not None else 0)]
+    cmd += ['--load-mode', args.load_mode]
     if args.threads:
         cmd += ['--threads', str(args.threads), '--threads-batch', str(args.threads)]
     if not args.no_projector:
@@ -425,16 +434,18 @@ def main():
                 last_prompt = usage['prompt_tokens']
                 (folder / 'long-context.json').write_text(json.dumps({
                     'target_ctx': args.ctx, 'generation_limit': extra['max_tokens'],
-                    'rounds': rounds}, indent=2))
+                    'completed': final, 'rounds': rounds}, indent=2))
                 print('CONTEXT', last_prompt, '/', args.ctx, 'final', final, flush=True)
-                if final:
+                if final or (args.max_tool_rounds and len(rounds) >= args.max_tool_rounds):
                     break
-            assert rounds and rounds[-1]['final'], rounds[-1:] or 'no tool rounds'
-            assert args.ctx - 1024 <= last_prompt < args.ctx - extra['max_tokens'], last_prompt
+            assert rounds, 'no tool rounds'
             assert all(r['usage']['prompt_cache_hit_tokens'] > 0 for r in results[2:]), 'lost retained prefix'
-            final_usage = results[-1]['usage'] or {}
-            assert final_usage.get('completion_tokens') == extra['max_tokens'], (
-                'final code generation stopped before its token limit', final_usage)
+            if not args.max_tool_rounds or rounds[-1]['final']:
+                assert rounds[-1]['final'], rounds[-1:]
+                assert args.ctx - 1024 <= last_prompt < args.ctx - extra['max_tokens'], last_prompt
+                final_usage = results[-1]['usage'] or {}
+                assert final_usage.get('completion_tokens') == extra['max_tokens'], (
+                    'final code generation stopped before its token limit', final_usage)
             return
         if args.query_benchmark:
             tools = [{'type': 'function', 'function': {'name': 'read_file', 'description': 'Read source code',
@@ -632,20 +643,22 @@ def main():
     finally:
         rss_stop.set()
         rss_thread.join()
-        stats = sampler.finish()
-        stats['peak_process_rss_mib'] = max(rss_samples, default=0)
-        stats['peak_runtime_rss_mib'] = max((v for k, v in rss_phase_peaks.items() if k != 'loading'), default=None)
-        stats['peak_loading_rss_mib'] = rss_phase_peaks.get('loading')
-        stats['phase_rss_peak_mib'] = rss_phase_peaks
-        stats['swap_stop'] = swap_stop or None
-        stats['gpu_api'] = gpu_api
-        stats.update(options=vars(args), requests=results)
-        (folder / 'summary.json').write_text(json.dumps(stats, indent=2, ensure_ascii=False, default=str))
-        print('PEAK_MIB', stats['peak_vram_mib'], flush=True)
-        if swap_stop or not args.keep_server:
-            stop_server(proc)
-        if nvml is not None:
-            nvml.nvmlShutdown()
+        try:
+            stats = sampler.finish()
+            stats['peak_process_rss_mib'] = max(rss_samples, default=0)
+            stats['peak_runtime_rss_mib'] = max((v for k, v in rss_phase_peaks.items() if k != 'loading'), default=None)
+            stats['peak_loading_rss_mib'] = rss_phase_peaks.get('loading')
+            stats['phase_rss_peak_mib'] = rss_phase_peaks
+            stats['swap_stop'] = swap_stop or None
+            stats['gpu_api'] = gpu_api
+            stats.update(options=vars(args), requests=results)
+            (folder / 'summary.json').write_text(json.dumps(stats, indent=2, ensure_ascii=False, default=str))
+            print('PEAK_MIB', stats['peak_vram_mib'], flush=True)
+        finally:
+            if swap_stop or not args.keep_server:
+                stop_server(proc)
+            if nvml is not None:
+                nvml.nvmlShutdown()
 
 
 if __name__ == '__main__':

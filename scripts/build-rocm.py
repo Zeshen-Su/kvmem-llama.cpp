@@ -10,6 +10,13 @@ import shutil
 import subprocess
 import sys
 
+COMMON_RADEON_TARGETS = (
+    'gfx1030', 'gfx1031', 'gfx1032', 'gfx1036',  # RX 6000 and RDNA2 integrated GPUs
+    'gfx1100', 'gfx1101', 'gfx1102', 'gfx1103',  # RX 7000 and RDNA3 integrated GPUs
+    'gfx1150', 'gfx1151', 'gfx1152', 'gfx1153',  # recent integrated Radeon GPUs
+    'gfx1200', 'gfx1201',            # RX 9000 desktop families
+)
+
 
 def host_platform():
     system = platform.system()
@@ -63,9 +70,16 @@ def make_plan(args, root):
     if jobs < 1:
         raise ValueError('--jobs/JOBS must be positive.')
     if args.gpu_targets:
-        targets = args.gpu_targets.replace(',', ';')
+        targets = (';'.join(COMMON_RADEON_TARGETS) if args.gpu_targets == 'common'
+                   else args.gpu_targets.replace(',', ';'))
         if any(not re.fullmatch(r'gfx[0-9a-f]+(?::(?:xnack|sramecc)[+-])*', part) for part in targets.split(';')):
-            raise ValueError('--gpu-targets must list gfx targets separated by semicolons or commas.')
+            raise ValueError('--gpu-targets must be common or list gfx targets separated by semicolons or commas.')
+        packs = rocm / '.kpack'
+        if packs.is_dir():
+            missing = [part for part in targets.split(';')
+                       if not (packs / f'blas_lib_{part}.kpack').is_file()]
+            if missing:
+                raise ValueError('ROCm SDK lacks BLAS kernel packs for: ' + ', '.join(missing))
         env['GPU_TARGETS'] = targets
         # The explicit CLI override wins over an older environment alias.
         env.pop('AMDGPU_TARGETS', None)
@@ -107,7 +121,7 @@ def main():
     target.add_argument('--windows', dest='target', action='store_const', const='windows')
     target.add_argument('--linux', dest='target', action='store_const', const='linux')
     parser.add_argument('--rocm', help='Native ROCm SDK root (CLI overrides environment)')
-    parser.add_argument('--gpu-targets', help='Optional gfx targets; default is automatic detection')
+    parser.add_argument('--gpu-targets', help='Optional gfx targets or common Radeon release profile; default is automatic detection')
     parser.add_argument('--build-dir', help='Separate output directory, relative to the current directory')
     parser.add_argument('--jobs', type=int)
     parser.add_argument('--fresh', action='store_true', help='Reset CMake cache, requires CMake >= 3.24')

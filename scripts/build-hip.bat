@@ -37,14 +37,23 @@ if not exist "%LLAMA_DIR%\CMakeLists.txt" (
     echo [error] llama.cpp submodule is missing. Run git submodule update --init.
     exit /b 1
 )
-git -C "%LLAMA_DIR%" apply --reverse --check "%LLAMA_PATCH%" >nul 2>&1
+git -C "%LLAMA_DIR%" apply --ignore-space-change --reverse --check "%LLAMA_PATCH%" >nul 2>&1
 if errorlevel 1 (
-    git -C "%LLAMA_DIR%" apply --check "%LLAMA_PATCH%"
+    git -C "%LLAMA_DIR%" apply --ignore-space-change --check "%LLAMA_PATCH%"
     if errorlevel 1 (
         echo [error] The maintained llama.cpp patch does not apply cleanly.
         exit /b 1
     )
-    git -C "%LLAMA_DIR%" apply "%LLAMA_PATCH%"
+    git -C "%LLAMA_DIR%" apply --ignore-space-change "%LLAMA_PATCH%"
+    if errorlevel 1 exit /b 1
+)
+
+set "RDNA2_PATCH=%ROOT%\patches\0005-hip-rdna2-quantized-kv-fa-vec.patch"
+git -C "%LLAMA_DIR%" apply --ignore-space-change --reverse --check "%RDNA2_PATCH%" >nul 2>&1
+if errorlevel 1 (
+    git -C "%LLAMA_DIR%" apply --ignore-space-change --check "%RDNA2_PATCH%"
+    if errorlevel 1 exit /b 1
+    git -C "%LLAMA_DIR%" apply --ignore-space-change "%RDNA2_PATCH%"
     if errorlevel 1 exit /b 1
 )
 
@@ -88,7 +97,7 @@ if not "%VSCMD_ARG_TGT_ARCH%"=="x64" (
 )
 
 REM --- ROCm clang on PATH (cmake resolves it at configure time only) ----------
-set "PATH=%ROCM_BIN%;%PATH%"
+set "PATH=%ROCM_BIN%;%ROCM%\bin;%PATH%"
 
 
 where cmake >nul 2>&1

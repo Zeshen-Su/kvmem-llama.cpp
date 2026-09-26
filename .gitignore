@@ -11,8 +11,9 @@ compile_commands.json
 __pycache__/
 *.pyc
 
-/build-ui/
+/build-ui*/
 
 /build-win*/
 /build-hip*/
 /dist/
+/artifacts/

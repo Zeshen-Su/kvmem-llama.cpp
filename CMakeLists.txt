@@ -174,6 +174,10 @@ if (KVMEM_BUILD_LLAMA)
     add_subdirectory(llama.cpp)
 
     if (KVMEM_GPU_BACKEND STREQUAL "HIP")
+        if (WIN32 AND EXISTS "${ROCM_PATH}/lib/llvm/amdgcn/bitcode/ocml.bc")
+            set(KVMEM_ROCM_DEVICE_LIBS "--rocm-device-lib-path=${ROCM_PATH}/lib/llvm/amdgcn/bitcode")
+            target_compile_options(ggml-hip PRIVATE "${KVMEM_ROCM_DEVICE_LIBS}")
+        endif()
         # The stage-in kernels must be built by AMD clang with `-x hip`, exactly
         # how ggml-hip builds ggml-cuda/*.cu on Windows (CMake does not support
         # the HIP language there). They live in their own object library so
@@ -203,6 +207,9 @@ if (KVMEM_BUILD_LLAMA)
         # than weakening diagnostics for all of libllama.
         target_compile_options(kvmem-stagein-hip PRIVATE
             -Wno-unused-result -Wno-unused-value)
+        if (KVMEM_ROCM_DEVICE_LIBS)
+            target_compile_options(kvmem-stagein-hip PRIVATE "${KVMEM_ROCM_DEVICE_LIBS}")
+        endif()
         # No explicit -x hip / --offload-arch here: the hip::device interface
         # already contributes "-x hip --offload-arch=<CMAKE_HIP_ARCHITECTURES>",
         # which is how ggml-hip gets them too. Adding them a second time makes

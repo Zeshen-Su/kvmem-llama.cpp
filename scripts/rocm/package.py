@@ -31,14 +31,17 @@ def git(*args):
     return subprocess.check_output(['git', '-C', str(ROOT), *args], text=True).strip()
 
 
-def windows_runtime(build, sdk, output):
-    reader = sdk / 'bin/llvm-readobj.exe'
-    search = [build / 'bin', sdk / 'bin']
+def windows_runtime(build, sdk, output, targets):
+    reader = next((path for path in (sdk / 'bin/llvm-readobj.exe',
+                                     sdk / 'lib/llvm/bin/llvm-readobj.exe') if path.is_file()), None)
+    if reader is None:
+        raise RuntimeError('Missing llvm-readobj.exe in ROCm SDK: ' + str(sdk))
+    search = [build / 'bin', sdk / 'bin', sdk / 'lib/llvm/bin']
     queue = list((output / 'bin').glob('*.exe'))
     external = set()
     seen = set()
     # HIP loads the compiler and RTC dynamically, so imports alone are insufficient.
-    for pattern in ('amd_comgr*.dll', 'hiprtc*.dll'):
+    for pattern in ('amd_comgr*.dll', 'hiprtc*.dll', 'rocm_kpack*.dll'):
         for file in (sdk / 'bin').glob(pattern):
             dest = output / 'bin' / file.name
             copy(file, dest)
@@ -65,11 +68,22 @@ def windows_runtime(build, sdk, output):
                 external.add(name)
             else:
                 raise RuntimeError(f'Unresolved DLL {name} imported by {file.name}')
+    packs = sdk / '.kpack'
+    if packs.is_dir():
+        if not targets:
+            raise RuntimeError('Set GPU_TARGETS before packaging a multi-arch ROCm SDK.')
+        for target in targets:
+            kernels = list(packs.glob('*_' + target + '.kpack'))
+            if not any(p.name.startswith('blas_lib_') for p in kernels):
+                raise RuntimeError('Missing BLAS kernel pack for ' + target)
+            for file in kernels:
+                copy(file, output / '.kpack' / file.name)
     for name in ('rocblas', 'hipblaslt'):
         data = sdk / 'bin' / name / 'library'
-        if not data.is_dir():
+        if not data.is_dir() and not packs.is_dir():
             raise RuntimeError('Missing ROCm kernel library: ' + str(data))
-        shutil.copytree(data, output / 'bin' / name / 'library')
+        if data.is_dir():
+            shutil.copytree(data, output / 'bin' / name / 'library')
     return sorted(external)
 
 
@@ -80,6 +94,8 @@ def main():
     ap.add_argument('--sdk', type=Path, help='Windows HIP SDK root')
     ap.add_argument('--runtime-licenses', type=Path, help='Collected component license directory')
     ap.add_argument('--validation', required=True, type=Path)
+    ap.add_argument('--local-dirty-source', action='store_true',
+                    help='Package an uncommitted local test build and mark its provenance')
     args = ap.parse_args()
     build, output = args.build.resolve(), args.output.resolve()
     windows = os.name == 'nt'
@@ -88,34 +104,49 @@ def main():
     if build == output or output in build.parents or ROOT == output or output in ROOT.parents:
         raise RuntimeError('Output must not be a source/build directory or its ancestor.')
     cache = (build / 'CMakeCache.txt').read_text()
-    subprocess.run(['git', '-C', str(ROOT), 'diff', '--exit-code', 'HEAD', '--', '.',
-                    ':(exclude)llama.cpp'], check=True, stdout=subprocess.DEVNULL)
+    source_status = subprocess.run(
+        ['git', '-C', str(ROOT), 'status', '--porcelain', '--untracked-files=normal',
+         '--', '.', ':(exclude)llama.cpp'], check=True, capture_output=True, text=True)
+    source_dirty = bool(source_status.stdout.strip())
+    if source_dirty and not args.local_dirty_source:
+        raise RuntimeError('Source tree has uncommitted changes. Commit reviewed code before release packaging, or use --local-dirty-source for a local test package.')
     options = dict(re.findall(r'^([^/#\n][^:\n]*):[^=\n]+=(.*)$', cache, re.M))
+    targets = [item for item in options.get('GPU_TARGETS', '').split(';') if item]
     for key, value in [('CMAKE_BUILD_TYPE', 'Release'), ('GGML_HIP', 'ON'),
                        ('GGML_CUDA', 'OFF'), ('GGML_NATIVE', 'OFF'), ('KVMEM_ENABLE_NVME', 'OFF')]:
         if options.get(key) != value:
             raise RuntimeError(f'{key} must be {value}, got {options.get(key)}')
-    if windows and (not args.sdk or not args.runtime_licenses):
-        ap.error('Windows packaging requires --sdk and --runtime-licenses.')
+    if windows and not args.sdk:
+        ap.error('Windows packaging requires --sdk.')
     args.validation.read_text(encoding='utf-8')
     ui = build / 'share/kvmem'
     for mode in ('ui', 'ui-lightweight'):
         if not (ui / mode / 'index.html').is_file():
             raise RuntimeError('Missing built UI: ' + mode)
-    output.mkdir(parents=True)
     suffix = '.exe' if windows else ''
-    for name in ('llama-kvmem-server', 'llama-kvmem-cli', 'llama-bench'):
-        copy(build / 'bin' / (name + suffix), output / 'bin' / (name + suffix))
+    binaries = [build / 'bin' / (name + suffix)
+                for name in ('llama-kvmem-server', 'llama-kvmem-cli', 'llama-bench')]
+    missing = [str(path) for path in binaries if not path.is_file()]
+    if missing:
+        raise RuntimeError('Missing built executable(s): ' + ', '.join(missing))
+    license_source = None
+    if windows:
+        license_source = args.runtime_licenses or args.sdk.resolve() / 'share/doc'
+        if not license_source.is_dir():
+            raise RuntimeError('Missing ROCm component licenses: ' + str(license_source))
+    output.mkdir(parents=True)
+    for binary in binaries:
+        copy(binary, output / 'bin' / binary.name)
     external = []
     if windows:
-        external = windows_runtime(build, args.sdk.resolve(), output)
-        shutil.copytree(args.runtime_licenses, output / 'licenses/ROCm')
+        external = windows_runtime(build, args.sdk.resolve(), output, targets)
+        shutil.copytree(license_source, output / 'licenses/ROCm')
     else:
         # Keep the OS/ROCm driver stack external; bundle only this build's libraries.
         for folder in (build / 'bin', build / 'kvmem'):
             for file in folder.glob('*.so*'):
                 copy(file, output / 'lib' / file.name)
-        external = ['ROCm 7.2.x runtime', 'compatible AMD driver', 'glibc and libstdc++']
+        external = ['compatible ROCm runtime', 'compatible AMD driver', 'glibc and libstdc++']
     for name in ('start-iq3.ps1', 'start-iq3.sh'):
         if (windows and name.endswith('.ps1')) or (not windows and name.endswith('.sh')):
             copy(ROOT / 'scripts/rocm' / name, output / 'scripts/rocm' / name)
@@ -131,6 +162,7 @@ def main():
     keys = ('GPU_TARGETS', 'CMAKE_HIP_ARCHITECTURES', 'GGML_HIP', 'GGML_CUDA',
             'GGML_NATIVE', 'GGML_OPENMP', 'CMAKE_BUILD_TYPE', 'BUILD_SHARED_LIBS')
     info = dict(source_commit=git('rev-parse', 'HEAD'),
+                source_worktree_dirty=source_dirty,
                 llama_commit=git('rev-parse', 'HEAD:llama.cpp'),
                 patch_sha256=sha(ROOT / 'patches/llama-kvmem-current.patch'),
                 platform='windows-x64' if windows else 'linux-x86_64',
@@ -138,6 +170,9 @@ def main():
                 external_dependencies=external, models_included=False,
                 cpu_requirement='AVX2, FMA, F16C, BMI2',
                 validation='See VALIDATION.md; compiled architectures are not a hardware certification.')
+    sdk_root = args.sdk.resolve() if args.sdk else Path(options.get('ROCM_PATH', '/missing-rocm-sdk'))
+    version_file = sdk_root / '.info/version'
+    info['rocm_version'] = version_file.read_text(encoding='utf-8').strip() if version_file.is_file() else None
     compiler = options.get('CMAKE_CXX_COMPILER')
     if compiler:
         info['compiler_version'] = subprocess.check_output([compiler, '--version'], text=True).splitlines()[0]

@@ -248,7 +248,7 @@ def main():
     if args.no_kvmem:
         cmd += ['--no-kvmem']
     cmd += ['--load-mode', args.load_mode]
-    (folder / 'argv.json').write_text(json.dumps(cmd, indent=2))
+    (folder / 'argv.json').write_text(json.dumps(cmd, indent=2), encoding='utf-8')
     sampler = LogVramSampler(folder)
     def system_swap():
         return 0.0, ''  # no /proc on Windows; swap-stop disabled
@@ -256,7 +256,7 @@ def main():
     swap_stop = {}
     with (folder / 'server.stderr.log').open('w') as fh:
         proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=fh)
-    (folder / 'pid').write_text(str(proc.pid))
+    (folder / 'pid').write_text(str(proc.pid), encoding='utf-8')
     sampler.start()
     rss_stop = threading.Event()
     rss_samples = []
@@ -293,7 +293,7 @@ def main():
                            top_p=.95, top_k=20, min_p=0, presence_penalty=0,
                            frequency_penalty=0, repetition_penalty=1)
         payload.update(extra or {})
-        (folder / (label + '.request.json')).write_text(json.dumps(payload, ensure_ascii=False))
+        (folder / (label + '.request.json')).write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
         sampler.phase = label
         log_start = (folder / 'server.stderr.log').stat().st_size
         start = time.monotonic()
@@ -305,7 +305,7 @@ def main():
                 code = response.status
                 if payload.get('stream'):
                     lines = []
-                    with (folder / (label + '.response.txt')).open('w') as streamed:
+                    with (folder / (label + '.response.txt')).open('w', encoding='utf-8') as streamed:
                         for wire in response:
                             line = wire.decode()
                             lines.append(line)
@@ -321,7 +321,7 @@ def main():
                     raw = response.read().decode()
         except urllib.error.HTTPError as exc:
             code, raw = exc.code, exc.read().decode()
-        (folder / (label + '.response.txt')).write_text(raw)
+        (folder / (label + '.response.txt')).write_text(raw, encoding='utf-8')
         assert code == status, (label, code, raw)
         if payload.get('stream') and code == 200:
             chunks = [json.loads(line[6:]) for line in raw.splitlines() if line.startswith('data: {')]
@@ -629,7 +629,7 @@ def main():
         stats['phase_rss_peak_mib'] = rss_phase_peaks
         stats['swap_stop'] = swap_stop or None
         stats.update(options=vars(args), requests=results)
-        (folder / 'summary.json').write_text(json.dumps(stats, indent=2, ensure_ascii=False, default=str))
+        (folder / 'summary.json').write_text(json.dumps(stats, indent=2, ensure_ascii=False, default=str), encoding='utf-8')
         print('PEAK_MIB', stats['peak_vram_mib'], flush=True)
         if swap_stop or not args.keep_server:
             stop_server(proc)

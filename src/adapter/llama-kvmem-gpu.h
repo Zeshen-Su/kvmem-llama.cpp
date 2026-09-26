@@ -31,6 +31,7 @@ typedef __hip_bfloat16 nv_bfloat16;
 // --- runtime API ----------------------------------------------------------
 #define cudaError_t                hipError_t
 #define cudaSuccess                hipSuccess
+#define cudaErrorMemoryAllocation  hipErrorMemoryAllocation
 #define cudaGetErrorString         hipGetErrorString
 #define cudaGetLastError           hipGetLastError
 

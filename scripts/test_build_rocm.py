@@ -70,6 +70,19 @@ class BuildPlanTests(unittest.TestCase):
         self.assertEqual(env['GPU_TARGETS'], 'gfx1030;gfx1100')
         self.assertNotIn('AMDGPU_TARGETS', env)
 
+    def test_common_radeon_release_profile_includes_gfx1030(self):
+        self.args.gpu_targets = 'common'
+        _, env = self.plan('windows')
+        self.assertEqual(env['GPU_TARGETS'], ';'.join(build.COMMON_RADEON_TARGETS))
+        self.assertIn('gfx1030', env['GPU_TARGETS'].split(';'))
+        self.assertIn('gfx1200', env['GPU_TARGETS'].split(';'))
+
+    def test_common_profile_checks_installed_kernel_packs(self):
+        (self.sdk / '.kpack').mkdir()
+        self.args.gpu_targets = 'common'
+        with self.assertRaisesRegex(ValueError, 'lacks BLAS kernel packs'):
+            self.plan('windows')
+
     def test_windows_sdk_rejected_on_linux(self):
         self.args.rocm = r'Z:\tools\rocm'
         with self.assertRaisesRegex(ValueError, 'Linux ROCm SDK'):

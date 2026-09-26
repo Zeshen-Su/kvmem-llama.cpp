@@ -1,14 +1,9 @@
 # ROCm KVMem: Windows and Linux
 
 Windows native HIP and Linux/WSL2 HIP use the same KVMem adapter and GDN replay kernels.
-The IQ3 launchers provide a 262144-token workspace, a 36864-token GPU KV budget,
+The IQ3 launchers provide a 262144-token workspace, a 28672-token GPU KV budget,
 16384-token generation reserve, q8_0 KV and MTP2 replay. Vision runs on the CPU.
 Windows starts with `--load-mode none`; Linux starts with `--load-mode auto`.
-
-> **Windows 注意 / Windows note**: 请务必使用 `--load-mode none`（启动脚本默认）。
-> 若改用 mmap 加载，模型文件页会滞留内存，256K 全程内存读数会从 ~13 GiB 升至 23 GiB 以上。
-> On Windows keep `--load-mode none` (launcher default). mmap loading retains model
-> pages in RAM and raises the observed footprint from ~13 GiB to 23+ GiB.
 
 ## 运行包 / Runtime package
 
@@ -18,24 +13,34 @@ Windows starts with `--load-mode none`; Linux starts with `--load-mode auto`.
 - [视觉投影](https://huggingface.co/HermiHg/Qwen3.8-27B-mmproj-Q5_K-MIX-GGUF/blob/main/mmproj-Qwen3.8-27B-Q5_K-MIX.gguf)
 
 Windows 需要支持相应显卡的 AMD 驱动及 Microsoft Visual C++ x64 运行库。
-Linux 需要与本机 GPU、发行版匹配的 ROCm 7.2.x 运行环境。WSL 使用 Linux ROCm，不能使用 Windows DLL。
+Linux 需要与本机 GPU、发行版匹配的 ROCm 10.0 运行环境。WSL 使用 Linux ROCm，不能使用 Windows DLL。
+各架构对应的操作系统和驱动版本见 [AMD ROCm 10 compatibility matrix](https://rocm.docs.amd.com/en/docs-10.0.0/compatibility/compatibility-matrix.html)。
 当前 Linux 运行包基于 Ubuntu 24.04 构建，依赖系统 OpenSSL 3、glibc、libstdc++ 及 ROCm 的系统依赖；
 其他发行版应确认二进制兼容性，或按下文从源码编译。
 查看包内 `BUILD-INFO.json` 的编译目标与 `VALIDATION.md` 的实际验证范围。
-建议 16 GiB 显存、16 GiB 或更多系统 RAM（256K 全程实测约 13~14 GiB）；关闭占用显存的大型应用。
+建议至少 16 GiB 显存、32 GiB 系统 RAM 用于 256K 长上下文；运行期主机内存实测约 13~14 GiB，
+16 GiB 系统 RAM 的机器还需为操作系统及其他程序留空间。关闭占用显存的大型应用。
 
 在解压目录运行，先用 `bin/llama-kvmem-server --list-devices`（Windows 加 `.exe`）查看设备名。
-下面的示例路径需要换成自己的模型路径；`ROCm0` 也应以实际列出的设备为准。
+下面的示例路径需要换成自己的模型路径。Windows 和 Linux 启动脚本默认选择可见显卡中显存最大的设备；
+多 GPU 机器可用 `-HipDevices 1` 指定 `--list-devices` 列出的物理设备序号。脚本将该设备隔离为 `ROCm0`。
+KVMem 服务当前只支持单 GPU offload。
+Windows 启动脚本在 RDNA4（gfx1200/gfx1201）上默认使用 rocBLAS GEMM 后端；
+如需自行指定后端，可在启动前设置 `ROCBLAS_USE_HIPBLASLT` 环境变量。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\rocm\start-iq3.ps1 `
   -Model 'D:\models\Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf' `
-  -Mmproj 'D:\models\mmproj-Qwen3.8-27B-Q5_K-MIX.gguf' -Gpu ROCm0
+  -Mmproj 'D:\models\mmproj-Qwen3.8-27B-Q5_K-MIX.gguf'
 ```
 
 ```bash
-bash scripts/rocm/start-iq3.sh /data/model-IQ3-mtp.gguf /data/mmproj.gguf ROCm0
+bash scripts/rocm/start-iq3.sh /data/model-IQ3-mtp.gguf /data/mmproj.gguf
 ```
+
+Linux 可在最后添加 `ROCm1` 等 `--list-devices` 中的设备名，显式指定所用显卡。
+Windows 可用 `-GpuKvBudget` 调整 GPU KV 预算；Linux 可设置环境变量
+`KVMEM_GPU_KV_BUDGET`。默认 28672 已在 16 GiB RX 9060 XT 上完成 7 轮长上下文测试。
 
 模型加载完成后打开 **http://127.0.0.1:18200/**。保持终端开启，Ctrl+C 停止。
 完整 UI 是默认值；将脚本里的 UI 目录改为 `share/kvmem/ui-lightweight` 即可使用轻量界面。
@@ -56,7 +61,7 @@ Linux needs the normal C/C++ development headers.
 
 ```powershell
 # Set this to the installed Windows HIP SDK root.
-$env:ROCM_PATH = 'D:\DevTools\ROCm'
+$env:ROCM_PATH = 'D:\DevTools\ROCm-10.0.0-multiarch'
 python scripts/build-rocm.py --windows --jobs 8
 ctest --test-dir build-hip-win --output-on-failure
 ```
@@ -78,6 +83,18 @@ An explicit override supports offline builds and additional GPUs:
 ```text
 python scripts/build-rocm.py --gpu-targets gfx1100,gfx1200,gfx1201 --jobs 8
 ```
+
+To build a distributable binary covering common Radeon families, use the explicit
+`common` profile with a ROCm 10 multiarch SDK on the matching operating system:
+
+```text
+python scripts/build-rocm.py --gpu-targets common --build-dir build-hip-win-common --jobs 8
+```
+
+This profile includes gfx1030 (RX 6800/6900 ISA), gfx1031/1032/1036,
+gfx1100/1101/1102/1103, gfx1150/1151/1152/1153, and gfx1200/1201. A single-arch SDK will
+reject the profile if its BLAS kernel packs are missing. Normal source builds
+still detect the GPUs in the local machine and do not assume this target list.
 
 Only select targets supported by your installed SDK and GPU. A compiled target does not imply
 an actual-device test. Build locally for architectures absent from a binary package.
