@@ -1,10 +1,8 @@
 # KVMem + llama.cpp
 
-**Prebuilt downloads:** [Windows x64 CUDA 13 / 12 (rc3)](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/v0.16.0-rc3) · [Linux / WSL2 x86_64 (rc1)](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/v0.16.0-rc1). For ROCm, see the [build and run guide](docs/rocm.md).
+**Prebuilt downloads:** [Windows x64 CUDA 13 / 12 (rc3)](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/v0.16.0-rc3) · [Linux / WSL2 x86_64 CUDA 13 / 12 (rc3)](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/v0.16.0-rc3) · [Windows / Linux ROCm (beta 2)](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/rc3-rocm-beta2)
 
 **QQ community / QQ 交流群：1040777853**
-
-**AMD ROCm / HIP:** [Windows and Linux build, IQ3 launchers and usage / 使用说明](docs/rocm.md).
 
 ## Near-lossless Qwen3.8-27B at a full 256K workspace on 16 GiB VRAM
 
@@ -62,7 +60,7 @@ Do **not** commit a dirty `llama.cpp` working tree. The submodule pointer is the
 - RTX 5060 Ti with 16 GiB VRAM; Intel Core Ultra 7 255H and 32 GiB RAM (19.53 GiB visible to WSL2).
 - CMake 4.4.3 and CUDA 13.2.86.
 
-The project builds on llama.cpp's CUDA backend, with the platform above used for our measurements. Reports of successful runs, benchmarks and issues on other NVIDIA GPUs and systems are welcome. An experimental AMD/ROCm HIP path is also available; Metal still needs integration work.
+The project builds on llama.cpp's CUDA backend, with the platform above used for our measurements. Reports of successful runs, benchmarks and issues on other NVIDIA GPUs and systems are welcome. AMD/ROCm and Metal backends would need integration work.
 
 ## Prebuilt downloads
 
@@ -70,9 +68,12 @@ The project builds on llama.cpp's CUDA backend, with the platform above used for
 |---|---|---|
 | Windows x64 — CUDA 13.2.86 | [v0.16.0-rc3](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/v0.16.0-rc3) | Recommended **runtime** ZIP; GPU targets 75/80/86/89/90/120a. Quantizer is a separate optional ZIP. |
 | Windows x64 — CUDA 12.9.86 | [v0.16.0-rc3](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/v0.16.0-rc3) | Alternative **runtime** ZIP; GPU targets 70/75/80/86/89/90/120a, including Volta. Quantizer is a separate optional ZIP. |
-| Linux / WSL2 x86_64 | [v0.16.0-rc1](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/v0.16.0-rc1) | Existing Linux CUDA package; no rc3 Linux/WSL rebuild is included. |
-| Windows x64 — ROCm (beta) | [Build and run guide](docs/rocm.md) | Native HIP build with ROCm 10.0; compile for your GPU architecture. |
-| Linux / WSL2 x86_64 — ROCm (beta) | [Build and run guide](docs/rocm.md) | Native HIP build with ROCm 10.0; Ubuntu 24.04 was tested on gfx1200. |
+| Linux / WSL2 x86_64 — CUDA 13.2.86 | [v0.16.0-rc3 tar.gz](https://github.com/kvmem/kvmem-llama.cpp/releases/download/v0.16.0-rc3/kvmem-v0.16.0-rc3-linux-x86_64-cuda13.2.86.tar.gz) | Runtime with CUDA libraries and both UIs; GPU targets 75/80/86/89/90/120a. Requires glibc 2.35+ and AVX2/FMA/F16C/BMI2. |
+| Linux / WSL2 x86_64 — CUDA 12.9.86 | [v0.16.0-rc3 tar.gz](https://github.com/kvmem/kvmem-llama.cpp/releases/download/v0.16.0-rc3/kvmem-v0.16.0-rc3-linux-x86_64-cuda12.9.86.tar.gz) | Runtime with CUDA libraries and both UIs; GPU targets 70/75/80/86/89/90/120a, including Volta. Requires glibc 2.35+ and AVX2/FMA/F16C/BMI2. |
+| Windows x64 — ROCm (beta 2) | [rc3-rocm-beta2](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/rc3-rocm-beta2) | Native HIP runtime ZIP for gfx1100/gfx1200/gfx1201 (RX 7900 / 9060 XT / 9070 series). |
+| Linux / WSL2 x86_64 — ROCm (beta 2) | [rc3-rocm-beta2](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/rc3-rocm-beta2) | Runtime tar.gz built on Ubuntu 24.04 with ROCm 7.2.x; other distributions may need a source build. |
+
+Linux rc3 packages use the same source as Windows and include independent `scripts/linux/start-iq3.sh` / `start-iq4.sh` launchers. CUDA Toolkit, Python and Node.js are not required to run these packages. See the [Linux / WSL2 quick start and validation notes](https://github.com/kvmem/kvmem-llama.cpp/releases/tag/v0.16.0-rc3) and verify downloads with [SHA256SUMS](https://github.com/kvmem/kvmem-llama.cpp/releases/download/v0.16.0-rc3/SHA256SUMS). The source-tree launcher commands below apply to source builds; use the packaged README for prebuilt launcher arguments.
 
 No model weights are bundled. For a Windows text-only setup, download the
 ready-made IQ3 `-mtp` model linked in the [Windows quick start](scripts/windows/README.md).
@@ -108,54 +109,6 @@ The submodule is ggml-org/llama.cpp at pin `b81c99b`. `scripts/apply-patches.sh`
 `scripts/build-cuda.sh` sets `GGML_CUDA_FA_ALL_QUANTS=ON` (needed for `--kv-dtype q5_0` on hybrid models). Binaries: `build/bin/llama-kvmem-server`.
 
 The build script defaults to `CMAKE_CUDA_ARCHITECTURES=120a-real` for the tested RTX 5060 Ti. For another GPU, set `CMAKE_CUDA_ARCHITECTURES` to its appropriate target when running the script; other GPU targets have not been tested here.
-
-### ROCm build
-
-The HIP path reuses llama.cpp's ROCm backend and compiles KVMem's stage-in,
-stage-out, layout-copy, mean-K and ReplaySSM fold kernels with HIP.
-See [Windows/Linux usage and packaging](docs/rocm.md) for the integrated build.
-The RX 7900 XTX results below are historical measurements contributed by
-FangJiangyi in PR #33, not measurements of every supported AMD GPU.
-
-```bash
-export ROCM_PATH=/opt/rocm
-python3 scripts/build-rocm.py --linux
-```
-
-Native Linux output is under `build-hip-linux/bin`; Windows uses `build-hip-win/bin`.
-The build detects the GPU architecture and accepts `--gpu-targets` as an override.
-Verify the bounded-KV invariant and sampled VRAM/RSS peaks with a local model:
-
-```bash
-python3 scripts/rocm_memory_canary.py -m /path/to/model.gguf \
-  --short-words 1024 --long-words 8192 --budget 256 --reserve 128
-```
-
-For models with an embedded MTP head, add `--mtp-draft-n-max 2`; the canary
-then verifies that both the target and MTP slot pools remain fixed. On the
-tested RX 7900 XTX, Qwen3.8-27B GSQ-RCO IQ3_S MTP at 1,024 and 8,192 prompt
-words used a fixed target pool of 44,564,480 bytes / 1,280 cells and a fixed
-MTP pool of 2,785,280 bytes / 1,280 cells. Sampled whole-device peak VRAM was
-12,430 MiB for KVMem at 8,192 words versus 12,727 MiB for native KV; peak RSS
-was about 11,992 MiB. This validates the bounded-memory invariant on ROCm,
-but is not a performance or absolute-memory comparison with the CUDA results
-on the different RTX 5060 Ti hardware.
-
-The full README-aligned ROCm IQ3/IQ4 Task 1 and 256K Task 2 measurements,
-including a metric-by-metric comparison with the RTX 5060 Ti baseline, are in
-[docs/rocm-recommended-config-performance.md](docs/rocm-recommended-config-performance.md).
-Both tasks use IQ3 `36864 + 16384` and IQ4 `32768 + 12288` unchanged. On the
-RX 7900 XTX, these runs reached 16011--16313 MiB peak VRAM and
-4372--13068 MiB runtime RSS. Task 1 IQ3/IQ4 passed, while Task 2 IQ4 passed
-the benchmark's 512-token length check. Task 2 IQ3 completed all tool rounds
-but stopped naturally at 232 final tokens, so it is reported as a diagnostic
-result rather than a 512-token equivalent. Free-VRAM figures are not directly
-comparable because this GPU has 24 GiB rather than 16 GiB.
-
-On the RX 7900 XTX test with Qwen3-0.6B Q8_0, native 8K KV peaked at
-1587.0 MiB whole-GPU VRAM; KVMem peaked at 1142.0 MiB and kept its GPU KV at
-23,396,352 bytes / 384 cells for both 1K and 8K prompts. Its RSS increased
-from 944.3 MiB to 1203.2 MiB as expected when more history moved to host RAM.
 
 ## Browser chat
 
